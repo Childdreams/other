@@ -1,0 +1,154 @@
+import json
+import types
+
+from deep_translator import GoogleTranslator
+
+import lxml
+import requests
+from bs4 import BeautifulSoup, NavigableString
+import re
+
+
+class TranslationTreeBuilder(object):
+    """
+    class that wraps functions, which use Translate Engine under the hood to translate text(s)
+    """
+    exists_label = ["img", "br"]
+
+    def __init__(self, html: str, callback: types.LambdaType, max_translation_bytes: int = 1000):
+        self.soup = BeautifulSoup(html, 'html.parser')
+        self.translation_callback = callback
+        self.max_translation_bytes = max_translation_bytes
+
+    def get_html(self, soup):
+        """
+        get html from bs4 soup
+        Recursive function
+        """
+        self_tree = []
+        for i in soup.children:
+            if isinstance(i, NavigableString) or type(i) == str:
+                continue
+            tree = self.get_html(i)
+            self_tree.append({
+                "Label": i.name,
+                "Style": i.attrs.get("style"),
+                "Content": i.string,
+                "Class": i.get("class"),
+                "Id": i.get("id"),
+                "Title": i.attrs.get("title"),
+                "Link": i.attrs.get("href"),
+                "Target": i.attrs.get("target"),
+                "Src": i.attrs.get("src"),
+                "Alt": i.attrs.get("alt"),
+                "Html": i.prettify(),
+                "Resp": "",
+                "FormatHtml": "%s" if len(tree) == 0 else self.extract_children(i.prettify()),
+                "Count": len(i.prettify()),
+                "AllContent": i.getText().strip(),
+                "Children": tree,
+            })
+        return self_tree
+
+    def extract_children(self, html):
+        soup = BeautifulSoup(html, 'html.parser')
+        if len(soup.contents) == 0:
+            return ""
+        for i in soup.contents[0].contents:
+            if not isinstance(i, NavigableString):
+                i.extract()
+        return re.sub(r">[^s]+<", ">%s<", str(soup))
+
+    def translation(self, article_trees: list):
+        translation_result = []
+        for article_tree in article_trees:
+            if article_tree["Label"] in self.exists_label:
+                article_tree["Resp"] = article_tree["Html"]
+                translation_result.append(article_tree["Resp"])
+                continue
+            if article_tree['Count'] < self.max_translation_bytes:
+                r = self.translation_callback(article_tree["Html"])
+                translation_result.append(r)
+                article_tree["Resp"] = article_tree["FormatHtml"] % (r)
+            else:
+                t = self.translation(article_tree["Children"])
+                article_tree["Resp"] = article_tree["FormatHtml"] % (" ".join(t))
+                translation_result.append(article_tree["Resp"])
+        return translation_result
+
+    def get_article_translation_resp(self, article_trees: list):
+        html = ""
+        for article_tree in article_trees:
+            html += article_tree["Resp"]
+        return html
+
+    def run(self):
+        article_trees = self.get_html(self.soup)
+        self.translation(article_trees)
+        return self.get_article_translation_resp(article_trees)
+
+
+if __name__ == '__main__':
+    h = '''
+    <p><span style=";font-family:&#39;Times New Roman&#39;;font-size:16px">The Honor brand has always been known for its quality, affordable products. And this Black Friday, they&#39;re offering some amazing deals on their top-of-the-line items! If you&#39;re in the market for a new phone, laptop, or even a smartwatch, then be sure to check out these deals! </span><span
+            style=";font-family:宋体;font-size:16px"><span style="font-family:Times New Roman">In this blog, we will discuss the top 6 Honor products you should snag on Black Friday.</span></span>
+        <span style=";font-family:&#39;Times New Roman&#39;;font-size:16px">The Honor brand has always been known for its quality, affordable products. And this Black Friday, they&#39;re offering some amazing deals on their top-of-the-line items! If you&#39;re in the market for a new phone, laptop, or even a smartwatch, then be sure to check out these deals! </span><span
+            style=";font-family:宋体;font-size:16px"><span style="font-family:Times New Roman">In this blog, we will discuss the top 6 Honor products you should snag on Black Friday.</span></span>
+        <span style=";font-family:&#39;Times New Roman&#39;;font-size:16px">The Honor brand has always been known for its quality, affordable products. And this Black Friday, they&#39;re offering some amazing deals on their top-of-the-line items! If you&#39;re in the market for a new phone, laptop, or even a smartwatch, then be sure to check out these deals! </span><span
+            style=";font-family:宋体;font-size:16px"><span style="font-family:Times New Roman">In this blog, we will discuss the top 6 Honor products you should snag on Black Friday.</span></span>
+        <span style=";font-family:&#39;Times New Roman&#39;;font-size:16px">The Honor brand has always been known for its quality, affordable products. And this Black Friday, they&#39;re offering some amazing deals on their top-of-the-line items! If you&#39;re in the market for a new phone, laptop, or even a smartwatch, then be sure to check out these deals! </span><span
+            style=";font-family:宋体;font-size:16px"><span style="font-family:Times New Roman">In this blog, we will discuss the top 6 Honor products you should snag on Black Friday.</span></span>
+        <span style=";font-family:&#39;Times New Roman&#39;;font-size:16px">The Honor brand has always been known for its quality, affordable products. And this Black Friday, they&#39;re offering some amazing deals on their top-of-the-line items! If you&#39;re in the market for a new phone, laptop, or even a smartwatch, then be sure to check out these deals! </span><span
+            style=";font-family:宋体;font-size:16px"><span style="font-family:Times New Roman">In this blog, we will discuss the top 6 Honor products you should snag on Black Friday.</span></span>
+        <span style=";font-family:&#39;Times New Roman&#39;;font-size:16px">The Honor brand has always been known for its quality, affordable products. And this Black Friday, they&#39;re offering some amazing deals on their top-of-the-line items! If you&#39;re in the market for a new phone, laptop, or even a smartwatch, then be sure to check out these deals! </span><span
+            style=";font-family:宋体;font-size:16px"><span style="font-family:Times New Roman">In this blog, we will discuss the top 6 Honor products you should snag on Black Friday.</span></span>
+        <span style=";font-family:&#39;Times New Roman&#39;;font-size:16px">The Honor brand has always been known for its quality, affordable products. And this Black Friday, they&#39;re offering some amazing deals on their top-of-the-line items! If you&#39;re in the market for a new phone, laptop, or even a smartwatch, then be sure to check out these deals! </span><span
+            style=";font-family:宋体;font-size:16px"><span style="font-family:Times New Roman">In this blog, we will discuss the top 6 Honor products you should snag on Black Friday.</span></span>
+        <span style=";font-family:&#39;Times New Roman&#39;;font-size:16px">The Honor brand has always been known for its quality, affordable products. And this Black Friday, they&#39;re offering some amazing deals on their top-of-the-line items! If you&#39;re in the market for a new phone, laptop, or even a smartwatch, then be sure to check out these deals! </span><span
+            style=";font-family:宋体;font-size:16px"><span style="font-family:Times New Roman">In this blog, we will discuss the top 6 Honor products you should snag on Black Friday.</span></span>
+    </p>
+    <p><img src="https://website-google-hk.oss-cn-hongkong.aliyuncs.com/uploads/16811810691.png"
+            alt="Top Honor Products to Snag on Black Friday " title="Top Honor Products to Snag on Black Friday"
+            alt="image.png" title="16811810691.png"/ ><span style=";font-family:&#39;Times New Roman&#39;;font-size:16px">&nbsp;</span>
+    </p>
+    <p><strong><span
+            style="font-family: &#39;Times New Roman&#39;;font-size: 21px">Top 6 Honor Products</span></strong><strong><span
+            style="font-family: 宋体;font-size: 21px">&nbsp;<span
+            style="font-family:Times New Roman">for Black Friday </span></span></strong></p>
+    <p><strong><span style="font-family: &#39;Times New Roman&#39;;font-size: 19px">Honor X8 5G</span></strong></p>
+    <p><span style=";font-family:&#39;Times New Roman&#39;;font-size:16px">This 5G-enabled smartphone from Honor is a great option if you&#39;re looking for speed and functionality. With its triple 48MP camera system, powerful processor, and 24-hour battery life, </span><span
+            style=";font-family:&#39;Times New Roman&#39;;font-size:16px">honor x8 5g</span><span
+            style=";font-family:&#39;Times New Roman&#39;;font-size:16px">&nbsp;is sure to impress. This sleek and stylish smartphone is perfect for anyone looking for a high-quality device at an affordable price. With its cutting-edge specs, you can enjoy all of your favorite apps and games in stunning clarity and detail. So if you&#39;re in the market for a new phone this Black Friday, don&#39;t miss out on these incredible deals from Honor X8 5G!</span>
+    </p>
+    <p><img src="https://website-google-hk.oss-cn-hongkong.aliyuncs.com/uploads/16811810561.png"
+            alt="Top Honor Products to Snag on Black Friday " title="Top Honor Products to Snag on Black Friday"
+            alt="image.png" title="16811810561.png"/ ><span style=";font-family:&#39;Times New Roman&#39;;font-size:16px">&nbsp;</span>
+    </p>
+    <p><strong><span style="font-family: &#39;Times New Roman&#39;;font-size: 19px">HONOR MagicBook 15 </span></strong></p>
+    <p><span style=";font-family:&#39;Times New Roman&#39;;font-size:16px">The HONOR MagicBook 15 equipped with AMD RyzenTM 5 5500U mobile processor and AMD RadeonTM graphics card boost your multi-task performance and provide outstanding energy efficiency as well as graphics processing capabilities. It also has a compact and light body, so it&#39;s easier to carry around whether you&#39;re traveling or in the office. This will help you with complex office needs, daily life, learning, and entertainment usage. Whether you&#39;re a student, an entrepreneur, or someone who simply needs a reliable laptop for day-to-day tasks, this is a perfect choice.</span>
+    </p>
+    <p><strong><span style="font-family: &#39;Times New Roman&#39;;font-size: 19px">HONOR Pad 8</span></strong></p>
+    <p><span style=";font-family:&#39;Times New Roman&#39;;font-size:16px">This 12-inch 2K HONOR full-view display tablet, with one-third higher visible area than that of typical 10.4-inch tablets, with a screen ratio of up to 87%, for flagship-level visual enjoyment. Besides, the eight-speaker stereo surround sound range, with pleasant treble and bass immersion, brings a symphony to your tablet. The audio scene is automatically and intelligently recognized, allowing you to enjoy an optimized listening experience. Equipped with the all-new desktop layout of Magic UI 6.1, featuring desktop cards at a glance, and accessing large folders with one touch. Whether you need it for reading ebooks, watching videos, or even working on documents, this versatile tablet can quickly handle it all. </span>
+    </p>
+    <p><strong><span style="font-family: &#39;Times New Roman&#39;;font-size: 19px">Honor Watch Magic</span></strong></p>
+    <p><span style=";font-family:&#39;Times New Roman&#39;;font-size:16px">With dual satellite positioning systems, HONOR MagicWatch accurately records your speed and route when running, walking, or cycling. In addition, you can use your wrist like a phone by staying connected with friends, colleagues, and loved ones right on your wrist. The built-in speaker and microphone are ideal for quick chats with seamless switching to your HONOR smartphone if needed. With its sleek design and advanced fitness tracking features, this smartwatch makes it easy to stay in shape while staying connected. Whether you&#39;re an athlete, a health enthusiast, or just looking for a stylish accessory, the Honor Watch Magic is a perfect choice.</span>
+    </p>
+    <p><strong><span style="font-family: &#39;Times New Roman&#39;;font-size: 19px">HONOR Earbuds 2 Lite </span></strong>
+    </p>
+    <p><span style=";font-family:&#39;Times New Roman&#39;;font-size:16px">These wireless earbuds are perfect for anyone who loves to listen to music on the go. With their lightweight, comfortable design and impressive sound quality, they&#39;re a great choice for any music lover. Honor earbuds allow you to immerse yourself in the music and enjoy a clear, detailed, and wonderful personal music world. So if you&#39;re looking for high-quality headphones at an affordable price, be sure to check out the Honor Earbuds 2 Lite!</span>
+    </p>
+    <p><strong><span style="font-family: &#39;Times New Roman&#39;;font-size: 19px">HONOR Band 6</span></strong></p>
+    <p><span style=";font-family:&#39;Times New Roman&#39;;font-size:16px">Honor Band 6 allows you to stay connected with others while maintaining your fitness goals with ease. This product boasts 14 days of battery life, 10 professional workout modes, and the ability to customize the watch face to match your mood. It&#39;s designed to be lightweight so you can easily take it with you anywhere, has a built-in Intelligent 24-hour heart rate monitor and an all-day blood oxygen level monitor, and seamlessly connects to your other devices. Whether you&#39;re a hardcore athlete or just trying to get in better shape, the Honor Band 6 will meet all your needs.</span>
+    </p>
+    <p><strong><span style="font-family: &#39;Times New Roman&#39;;font-size: 21px">Conclusion</span></strong></p>
+    <p><span style=";font-family:&#39;Times New Roman&#39;;font-size:16px">Looking for the top Honor products to snag this Black Friday? Whether you&#39;re in the market for a new smartphone, laptop, smartwatch, headphones, or tablet, there are plenty of great deals and discounts to be found. From the 5G-enabled X8 to the powerful MagicBook 15 and sleek Watch Magic, there&#39;s something for everyone here. So don&#39;t miss out on these incredible savings from Honor!</span>
+    </p>
+    <p><span style=";font-family:&#39;Times New Roman&#39;;font-size:16px">&nbsp;</span></p>
+    <p><span style=";font-family:&#39;Times New Roman&#39;;font-size:16px">&nbsp;</span></p>
+    <p><br/></p>'''
+    translater = GoogleTranslator(source='en', target='zh-CN',
+                                  proxies={'http': 'http://127.0.0.1:4870', 'https': 'http://127.0.0.1:4870'})
+
+    t = TranslationTreeBuilder(html=h, callback=lambda x: translater.translate(x.replace('\n', '')),
+                               max_translation_bytes=1000)
+    print(t.run())
